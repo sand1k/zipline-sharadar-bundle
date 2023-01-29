@@ -1,5 +1,6 @@
 import datetime
 import os
+import platform
 import subprocess
 import sys
 from os import environ as env
@@ -7,6 +8,7 @@ from os import environ as env
 from logbook import Logger, FileHandler, DEBUG, INFO, NOTSET, StreamHandler, set_datetime_format
 from sharadar.util.mail import send_mail
 from zipline.api import get_datetime
+from zipline.utils.paths import ensure_directory, zipline_path
 
 # log in local time instead of UTC
 set_datetime_format("local")
@@ -19,8 +21,11 @@ class SharadarDbBundleLogger(Logger):
         super().__init__(logname, level)
 
         now = datetime.datetime.now()
-        self.filename = os.path.join(env["HOME"], "log",
-                                   "sharadar-zipline" + '_' + now.strftime('%Y-%m-%d_%H%M') + ".log")
+        log_folder_path = zipline_path(["log"])
+        ensure_directory(log_folder_path)
+        self.filename = os.path.join(
+            log_folder_path,
+            "sharadar-zipline" + '_' + now.strftime('%Y-%m-%d_%H%M') + ".log")
 
         log_file_handler = FileHandler(self.filename, level=DEBUG, bubble=True)
         log_file_handler.format_string = LOG_ENTRY_FMT
@@ -32,7 +37,7 @@ class SharadarDbBundleLogger(Logger):
 
     def process_record(self, record):
         super().process_record(record)
-        if os.name == 'posix':
+        if platform.system() == 'Linux':
             msg = str(record.message).encode("unicode_escape").decode("utf-8")
             msg = msg.replace('\n', ' ')
             msg = msg.replace('"', "'")
