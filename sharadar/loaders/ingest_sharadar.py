@@ -59,8 +59,12 @@ def fetch_data(start, end):
         df_sep = fetch_entire_table(env["NASDAQ_API_KEY"], "SHARADAR/SEP", parse_dates=['date'])
         df_sfp = fetch_entire_table(env["NASDAQ_API_KEY"], "SHARADAR/SFP", parse_dates=['date'])
     else:
-        df_sep = fetch_table_by_date(env["NASDAQ_API_KEY"], 'SHARADAR/SEP', start, end)
-        df_sfp = fetch_table_by_date(env["NASDAQ_API_KEY"], 'SHARADAR/SFP', start, end)
+        df_sep = fetch_entire_table(env["NASDAQ_API_KEY"], "SHARADAR/SEP", parse_dates=['date'])
+        df_sep = df_sep[df_sep['date'] >= start]
+        df_sfp = fetch_entire_table(env["NASDAQ_API_KEY"], "SHARADAR/SFP", parse_dates=['date'])
+        df_sfp = df_sfp[df_sfp['date'] >= start]
+        #df_sep = fetch_table_by_date(env["NASDAQ_API_KEY"], 'SHARADAR/SEP', start, end)
+        #df_sfp = fetch_table_by_date(env["NASDAQ_API_KEY"], 'SHARADAR/SFP', start, end)
 
     df = pd.concat([df_sep, df_sfp])
     df = df.drop_duplicates().reset_index(drop=True)
@@ -152,7 +156,7 @@ def synch_to_calendar(sessions, start_date, end_date, df_ticker, df):
 
 
 def _ingest(start_session, calendar=get_calendar('XNYS'), output_dir=get_output_dir(),
-            universe=False, sanity_check=True, use_last_available_dt=True):
+            universe=False, sanity_check=True, use_last_available_dt=True, use_last_available_downloads=True):
     os.makedirs(output_dir, exist_ok=True)
 
     print("logfiles:", log.filename)
@@ -188,8 +192,8 @@ def _ingest(start_session, calendar=get_calendar('XNYS'), output_dir=get_output_
     equities_df = create_equities_df(prices_df, tickers, sessions, sharadar_metadata_df, show_progress=True)
 
     # Additional MACRO data
-    macro_equities_df = create_macro_equities_df()
-    equities_df = pd.concat([equities_df, macro_equities_df])
+    #macro_equities_df = create_macro_equities_df()
+    #equities_df = pd.concat([equities_df, macro_equities_df])
 
     # Write equity metadata
     log.info("Start writing equities...")
@@ -223,9 +227,9 @@ def _ingest(start_session, calendar=get_calendar('XNYS'), output_dir=get_output_
     log.info("Start writing %d splits and %d dividends data..." % (len(splits_df), len(dividends_df)))
     adjustment_writer.write(splits=splits_df, dividends=dividends_df)
 
-    log.info("Adding macro data from %s ..." % (start_fetch_date))
-    macro_prices_df = create_macro_prices_df(start_fetch_date, calendar)
-    sql_daily_bar_writer.write(macro_prices_df)
+    #log.info("Adding macro data from %s ..." % (start_fetch_date))
+    #macro_prices_df = create_macro_prices_df(start_fetch_date, calendar)
+    #sql_daily_bar_writer.write(macro_prices_df)
 
     log.info("Start writing supplementary_mappings data...")
     # EQUITY SUPPLEMENTARY MAPPINGS are used for company name, sector, industry and fundamentals financial data.
@@ -238,12 +242,15 @@ def _ingest(start_session, calendar=get_calendar('XNYS'), output_dir=get_output_
     log.info("Start creating Fundamentals dataframe...")
     if must_fetch_entire_table(start_date_fundamentals):
         log.info("Fetch entire table.")
-        sf1_df = fetch_entire_table(env["NASDAQ_API_KEY"], "SHARADAR/SF1", parse_dates=['datekey', 'reportperiod'])
+        sf1_df = fetch_entire_table(env["NASDAQ_API_KEY"], "SHARADAR/SF1", parse_dates=['datekey', 'reportperiod', 'calendardate'])
     else:
         log.info("Start date: %s" % start_date_fundamentals)
-        sf1_df = fetch_sf1_table_date(env["NASDAQ_API_KEY"], start_date_fundamentals)
-    with closing(sqlite3.connect(asset_dbpath)) as conn, conn, closing(conn.cursor()) as cursor:
-        insert_fundamentals(sharadar_metadata_df, sf1_df, cursor, show_progress=True)
+        sf1_df = fetch_entire_table(env["NASDAQ_API_KEY"], "SHARADAR/SF1", parse_dates=['datekey', 'reportperiod', 'calendardate'])
+        filter = (sf1_df['calendardate'] >= start_date_fundamentals) & (sf1_df['dimension'].isin(['ARQ', 'ART']))
+        sf1_df = sf1_df[filter]
+        #sf1_df = fetch_sf1_table_date(env["NASDAQ_API_KEY"], start_date_fundamentals)
+    #with closing(sqlite3.connect(asset_dbpath)) as conn, conn, closing(conn.cursor()) as cursor:
+    #    insert_fundamentals(sharadar_metadata_df, sf1_df, cursor, show_progress=True)
 
     start_date_metrics = asset_db_reader.last_available_daily_metrics_dt
     log.info("Start creating daily metrics dataframe...")
@@ -252,9 +259,11 @@ def _ingest(start_session, calendar=get_calendar('XNYS'), output_dir=get_output_
         daily_df = fetch_entire_table(env["NASDAQ_API_KEY"], "SHARADAR/DAILY", parse_dates=['date'])
     else:
         log.info("Start date: %s" % start_date_fundamentals)
-        daily_df = fetch_table_by_date(env["NASDAQ_API_KEY"], 'SHARADAR/DAILY', start_date_metrics)
-    with closing(sqlite3.connect(asset_dbpath)) as conn, conn, closing(conn.cursor()) as cursor:
-        insert_daily_metrics(sharadar_metadata_df, daily_df, cursor, show_progress=True)
+        daily_df = fetch_entire_table(env["NASDAQ_API_KEY"], "SHARADAR/DAILY", parse_dates=['date'])
+        daily_df = daily_df[(daily_df['calendardate'] >= start_date_fundamentals)]
+        #daily_df = fetch_table_by_date(env["NASDAQ_API_KEY"], 'SHARADAR/DAILY', start_date_metrics)
+    #with closing(sqlite3.connect(asset_dbpath)) as conn, conn, closing(conn.cursor()) as cursor:
+    #    insert_daily_metrics(sharadar_metadata_df, daily_df, cursor, show_progress=True)
 
     if universe:
         from sharadar.pipeline.universes import update_universe, TRADABLE_STOCKS_US, base_universe, context
