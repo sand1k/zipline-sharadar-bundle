@@ -1,3 +1,4 @@
+import os
 from io import BytesIO
 from zipfile import ZipFile
 
@@ -7,6 +8,7 @@ import nasdaqdatalink
 import requests
 from click import progressbar
 from sharadar.util.logger import log
+from sharadar.util.output_dir import get_output_dir
 from six.moves.urllib.parse import urlencode
 
 ONE_MEGABYTE = 1024 * 1024
@@ -73,6 +75,11 @@ def load_data_table(file, index_col=None, parse_dates=False):
 
 
 def fetch_entire_table(api_key, table_name, index_col=None, parse_dates=False, retries=5):
+    zip_file = os.path.join(get_output_dir(), os.path.split(table_name)[-1] + '.zip')
+    if os.path.exists(zip_file):
+        log.info("Parsing data from file %s." % zip_file)
+        return load_data_table(zip_file, index_col=index_col, parse_dates=parse_dates)
+
     log.info("Start loading the entire %s dataset..." % table_name)
     for _ in range(retries):
         try:
@@ -87,6 +94,10 @@ def fetch_entire_table(api_key, table_name, index_col=None, parse_dates=False, r
                 chunk_size=ONE_MEGABYTE,
                 label="Downloading data from Quandl table " + table_name
             )
+
+            with open(zip_file, "wb") as f:
+                log.info("Saving loaded data to file %s." % zip_file)
+                f.write(raw_file.getbuffer())
 
             log.info("Parsing data from nasdaqdatalink table %s." % table_name)
             return load_data_table(raw_file, index_col=index_col, parse_dates=parse_dates)
