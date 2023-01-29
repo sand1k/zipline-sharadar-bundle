@@ -171,7 +171,7 @@ class SQLiteAssetFinder(AssetFinder):
         result = self._get_result(sids, field_name, as_of_date, n=1, enforce_date=False)
         if len(result) == 0:
             return []
-        return pd.DataFrame(result).set_index(0).reindex(sids, fill_value='NA').T.values
+        return pd.DataFrame(result).set_index('sid').reindex(sids, fill_value='NA').T.values
 
     # @cached
     def get_daily_metrics(self, sids, field_name, as_of_date=pd.Timestamp.today(), n=1, calendar = get_calendar('XNYS')):
